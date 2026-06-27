@@ -1,0 +1,9 @@
+[Unit]
+Description=Watch for reload signal from dashboard
+
+[Path]
+PathModified=/var/run/vpn-dashboard/reload-xray
+Unit=xray-reload.service
+
+[Install]
+WantedBy=multi-user.target

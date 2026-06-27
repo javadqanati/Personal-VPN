@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>VPN Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; max-width: 1100px; margin: 32px auto; padding: 0 20px; color: #1a1a1a; }
+    h1 { margin-bottom: 4px; }
+    .sub { color: #888; margin-top: 0; }
+    .card { background: #f7f7f9; border: 1px solid #e3e3e8; padding: 18px 22px; border-radius: 10px; margin: 14px 0; }
+    .card h3 { margin-top: 0; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { text-align: left; padding: 9px 6px; border-bottom: 1px solid #e3e3e8; }
+    th { font-weight: 600; color: #555; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
+    td.num { font-variant-numeric: tabular-nums; }
+    td.actions { text-align: right; white-space: nowrap; }
+    .err { color: #c00; min-height: 1em; }
+    .live { display: inline-block; width: 8px; height: 8px; background: #2a2; border-radius: 50%; margin-right: 6px; animation: pulse 1.5s infinite; }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+    .controls { display: flex; gap: 12px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
+    select, input, button { padding: 7px 12px; font-size: 14px; font-family: inherit; border: 1px solid #c8c8d0; border-radius: 6px; background: white; }
+    button { background: #2563eb; color: white; border-color: #2563eb; cursor: pointer; }
+    button:hover { background: #1d4fd6; }
+    button.danger { background: white; color: #c00; border-color: #ddd; padding: 4px 10px; font-size: 13px; }
+    button.danger:hover { background: #fee; }
+    button.link { background: white; color: #2563eb; border-color: #ddd; padding: 4px 10px; font-size: 13px; }
+    button.link:hover { background: #eff5ff; }
+    .badge { display: inline-block; background: #e0e7ff; color: #3730a3; padding: 2px 8px; border-radius: 10px; font-size: 12px; margin-right: 4px; }
+    .form-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    .form-row input { flex: 1; min-width: 200px; }
+    .modal { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: none; align-items: center; justify-content: center; z-index: 100; }
+    .modal.show { display: flex; }
+    .modal-content { background: white; padding: 24px; border-radius: 12px; max-width: 500px; width: 90%; }
+    .modal-content h3 { margin-top: 0; }
+    .modal-content img { display: block; margin: 12px auto; max-width: 280px; border: 1px solid #ddd; padding: 8px; background: white; }
+    .modal-content code { display: block; background: #1f2937; color: #e5e7eb; padding: 12px; border-radius: 6px; font-size: 12px; word-break: break-all; max-height: 120px; overflow: auto; }
+    .modal-close { float: right; background: none; border: none; color: #888; font-size: 24px; cursor: pointer; padding: 0; }
+  </style>
+</head>
+<body>
+  <h1>VPN Dashboard</h1>
+  <p class="sub"><span class="live"></span> Live · refreshes every 5 seconds</p>
+
+  <div class="card">
+    <h3>Users</h3>
+    <div class="form-row" style="margin-bottom: 14px;">
+      <input id="new-email" placeholder="email (e.g. friend@example.com)" />
+      <input id="new-label" placeholder="label (optional)" />
+      <button onclick="createUser()">Add user</button>
+    </div>
+    <table>
+      <thead><tr><th>Label</th><th>Email</th><th>Inbounds</th><th>UUID</th><th>Traffic</th><th></th></tr></thead>
+      <tbody id="users-body"><tr><td colspan="5">Loading…</td></tr></tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <h3>Traffic over time</h3>
+    <div class="controls">
+      <label>Tunnel:
+        <select id="chart-tag">
+          <option value="vless-reality">vless-reality</option>
+          <option value="vless-ws">vless-ws</option>
+        </select>
+      </label>
+      <label>Range:
+        <select id="chart-hours">
+          <option value="1">Last hour</option>
+          <option value="6">Last 6 hours</option>
+          <option value="24" selected>Last 24 hours</option>
+          <option value="168">Last 7 days</option>
+        </select>
+      </label>
+    </div>
+    <canvas id="trafficChart" height="100"></canvas>
+  </div>
+
+  <div class="card">
+    <h3>Cumulative inbound traffic</h3>
+    <table>
+      <thead><tr><th>Tunnel</th><th>Uplink</th><th>Downlink</th><th>Total</th></tr></thead>
+      <tbody id="inbounds-body"><tr><td colspan="4">Loading…</td></tr></tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <h3>Cumulative outbound traffic</h3>
+    <table>
+      <thead><tr><th>Outbound</th><th>Uplink</th><th>Downlink</th><th>Total</th></tr></thead>
+      <tbody id="outbounds-body"><tr><td colspan="4">Loading…</td></tr></tbody>
+    </table>
+  </div>
+
+  <p id="error" class="err"></p>
+
+  <div class="modal" id="link-modal" onclick="if(event.target===this)closeModal()">
+    <div class="modal-content">
+      <button class="modal-close" onclick="closeModal()">×</button>
+      <h3 id="modal-title">Connection link</h3>
+      <div class="controls">
+        <label>Tunnel:
+          <select id="modal-inbound" onchange="refreshLink()">
+            <option value="vless-reality">REALITY (recommended for Iran)</option>
+            <option value="vless-ws">WebSocket (via Cloudflare)</option>
+          </select>
+        </label>
+      </div>
+      <img id="modal-qr" alt="QR code" />
+      <code id="modal-link"></code>
+      <div style="margin-top: 12px;">
+        <button onclick="copyLink()">Copy link</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    function fmtBytes(n) {
+      if (!n) return '0 B';
+      const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+      let i = 0;
+      while (n >= 1024 && i < units.length - 1) { n /= 1024; i++; }
+      return n.toFixed(i === 0 ? 0 : 2) + ' ' + units[i];
+    }
+    function setError(msg) { document.getElementById('error').textContent = msg || ''; }
+
+    function renderTable(id, data) {
+      const tbody = document.getElementById(id);
+      const tags = Object.keys(data).sort();
+      if (!tags.length) { tbody.innerHTML = '<tr><td colspan="4">No data</td></tr>'; return; }
+      tbody.innerHTML = tags.map(tag => {
+        const up = data[tag].uplink || 0, down = data[tag].downlink || 0;
+        return `<tr><td>${tag}</td><td class="num">${fmtBytes(up)}</td><td class="num">${fmtBytes(down)}</td><td class="num">${fmtBytes(up + down)}</td></tr>`;
+      }).join('');
+    }
+
+    async function refreshUsers() {
+      try {
+        const r = await fetch('api/users', { credentials: 'include' });
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        const { users } = await r.json();
+        const tbody = document.getElementById('users-body');
+        if (!users.length) { tbody.innerHTML = '<tr><td colspan="5">No users yet</td></tr>'; return; }
+        tbody.innerHTML = users.map(u => `
+          <tr>
+            <td>${escapeHtml(u.label || '—')}</td>
+            <td>${escapeHtml(u.email)}</td>
+            <td>${u.inbounds.map(i => `<span class="badge">${i}</span>`).join('')}</td>
+            <td><code style="font-size:11px">${u.uuid.slice(0,8)}…</code></td>
+            <td class="num">${userTraffic(u.email)}</td>
+            <td class="actions">
+              <button class="link" onclick="showLink(${u.id}, '${escapeHtml(u.label || u.email)}')">Link / QR</button>
+              <button class="danger" onclick="revokeUser(${u.id}, '${escapeHtml(u.label || u.email)}')">Revoke</button>
+            </td>
+          </tr>
+        `).join('');
+      } catch (e) { setError('Users: ' + e.message); }
+    }
+
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    }
+
+    async function createUser() {
+      const email = document.getElementById('new-email').value.trim();
+      const label = document.getElementById('new-label').value.trim();
+      if (!email) { setError('Email is required'); return; }
+      setError('Adding user… (Xray will reload, brief blip for active users)');
+      try {
+        const r = await fetch('api/users', {
+          method: 'POST', credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, label, inbounds: ['vless-reality', 'vless-ws'] })
+        });
+        const data = await r.json();
+        if (!r.ok) throw new Error(data.detail || ('HTTP ' + r.status));
+        document.getElementById('new-email').value = '';
+        document.getElementById('new-label').value = '';
+        setError('');
+        refreshUsers();
+      } catch (e) { setError('Add user: ' + e.message); }
+    }
+
+    async function revokeUser(id, name) {
+      if (!confirm('Revoke user "' + name + '"? They will lose access immediately.')) return;
+      setError('Revoking… (Xray will reload)');
+      try {
+        const r = await fetch('api/users/' + id, { method: 'DELETE', credentials: 'include' });
+        const data = await r.json();
+        if (!r.ok) throw new Error(data.detail || ('HTTP ' + r.status));
+        setError('');
+        refreshUsers();
+      } catch (e) { setError('Revoke: ' + e.message); }
+    }
+
+    let currentLinkUserId = null;
+    async function showLink(id, name) {
+      currentLinkUserId = id;
+      document.getElementById('modal-title').textContent = 'Connection link — ' + name;
+      document.getElementById('modal-inbound').value = 'vless-reality';
+      document.getElementById('link-modal').classList.add('show');
+      refreshLink();
+    }
+    async function refreshLink() {
+      if (!currentLinkUserId) return;
+      const inbound = document.getElementById('modal-inbound').value;
+      try {
+        const r = await fetch(`api/users/${currentLinkUserId}/link?inbound=${inbound}`, { credentials: 'include' });
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        const { link, qr } = await r.json();
+        document.getElementById('modal-link').textContent = link;
+        document.getElementById('modal-qr').src = 'data:image/png;base64,' + qr;
+      } catch (e) { setError('Link: ' + e.message); }
+    }
+    function closeModal() {
+      document.getElementById('link-modal').classList.remove('show');
+      currentLinkUserId = null;
+    }
+    function copyLink() {
+      const text = document.getElementById('modal-link').textContent;
+      navigator.clipboard.writeText(text).then(() => setError('Link copied to clipboard'));
+    }
+
+    let chart;
+    function ensureChart() {
+      if (chart) return chart;
+      const ctx = document.getElementById('trafficChart').getContext('2d');
+      chart = new Chart(ctx, {
+        type: 'line',
+        data: { datasets: [
+          { label: 'Uplink',   data: [], borderColor: '#2563eb', backgroundColor: 'rgba(37,99,235,0.1)', fill: true, tension: 0.2 },
+          { label: 'Downlink', data: [], borderColor: '#16a34a', backgroundColor: 'rgba(22,163,74,0.1)', fill: true, tension: 0.2 },
+        ]},
+        options: {
+          responsive: true,
+          interaction: { mode: 'index', intersect: false },
+          scales: {
+            x: { type: 'time', time: { tooltipFormat: 'MMM d HH:mm' } },
+            y: { ticks: { callback: v => fmtBytes(v) } }
+          },
+          plugins: { tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: ${fmtBytes(ctx.parsed.y)}` } } }
+        }
+      });
+      return chart;
+    }
+
+    let latestUserStats = {};
+    function userTraffic(email) {
+      const s = latestUserStats[email];
+      if (!s) return '—';
+      return fmtBytes((s.uplink || 0) + (s.downlink || 0));
+    }
+    async function refreshStats() {
+      try {
+        const r = await fetch('api/stats', { credentials: 'include' });
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        const data = await r.json();
+        latestUserStats = data.users || {};
+        renderTable('inbounds-body', data.inbounds || {});
+        renderTable('outbounds-body', data.outbounds || {});
+      } catch (e) { setError('Stats: ' + e.message); }
+    }
+    async function refreshChart() {
+      try {
+        const tag = document.getElementById('chart-tag').value;
+        const hours = document.getElementById('chart-hours').value;
+        const r = await fetch(`api/history?tag=${tag}&hours=${hours}&kind=inbound`, { credentials: 'include' });
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        const data = await r.json();
+        const c = ensureChart();
+        c.data.datasets[0].data = data.series.uplink.map(p => ({ x: p.ts, y: p.bytes }));
+        c.data.datasets[1].data = data.series.downlink.map(p => ({ x: p.ts, y: p.bytes }));
+        c.update();
+      } catch (e) { setError('Chart: ' + e.message); }
+    }
+
+    document.getElementById('chart-tag').addEventListener('change', refreshChart);
+    document.getElementById('chart-hours').addEventListener('change', refreshChart);
+
+    refreshUsers(); refreshStats(); refreshChart();
+    setInterval(refreshStats, 5000);
+    setInterval(refreshChart, 30000);
+    setInterval(refreshUsers, 15000);
+  </script>
+</body>
+</html>

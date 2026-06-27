@@ -1,0 +1,7 @@
+[Unit]
+Description=Reload Xray when dashboard requests it
+After=xray.service
+
+[Service]
+Type=oneshot
+ExecStart=/bin/systemctl restart xray

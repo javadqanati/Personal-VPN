@@ -1,0 +1,10 @@
+services:
+  dashboard:
+    build: .
+    container_name: vpn-dashboard
+    restart: unless-stopped
+    env_file: .env
+    network_mode: "host"
+    volumes:
+      - /usr/local/etc/xray:/xray-config
+      - /var/run/vpn-dashboard:/var/run/vpn-dashboard

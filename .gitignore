@@ -1,0 +1,28 @@
+# Secrets — NEVER commit
+.env*
+*.save
+*.key
+*.pem
+secrets/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# OS noise
+.DS_Store
+Thumbs.db
+
+# Editor noise
+.vscode/
+.idea/
+*.swp
+*~
+
+# Backups
+*.prev
+*.bak
+*.tmp
