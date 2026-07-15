@@ -1,5 +1,7 @@
-Safe Connection to the Network via VPN 
-A censorship-resistant VPN with web-based administration 
+#Safe Connection to the Network via VPN 
+
+##A censorship-resistant VPN with web-based administration 
+
 Abstract 
 This report describes the design and implementation of a censorship-resistant Virtual Private 
 Network. The goal is not merely to provide an encrypted tunnel, but to provide a tunnel whose 
